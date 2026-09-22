@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cronometro</title>
+<style>
+:root{
+  --bg:#0f1115; --card:#1a1d24; --text:#f2f3f5; --sub:#9aa0ab;
+  --work:#ff5a5f; --rest:#3ddc84; --accent:#5a8dff; --border:#2a2e38;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#f4f5f7; --card:#ffffff; --text:#15171c; --sub:#6b7280;
+    --work:#e03e42; --rest:#1fa15e; --accent:#3b6fe0; --border:#e3e5ea;
+  }
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  display:flex; align-items:center; justify-content:center;
+  padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px));
+  min-height:100%;
+}
+.card{
+  width:100%; max-width:380px; background:var(--card); border:1px solid var(--border);
+  border-radius:20px; padding:clamp(18px,5vw,28px) clamp(16px,5vw,24px); text-align:center;
+  transition:transform .1s;
+}
+h1{font-size:15px; font-weight:600; color:var(--sub); margin:0 0 18px; letter-spacing:.3px; text-transform:uppercase;}
+.phase{font-size:18px; font-weight:700; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; transition:color .2s;}
+.phase.work{color:var(--work);}
+.phase.rest{color:var(--rest);}
+.time{font-size:clamp(48px,15vw,72px); font-weight:800; font-variant-numeric:tabular-nums; margin:4px 0 6px; line-height:1;}
+.round{color:var(--sub); font-size:14px; margin-bottom:22px;}
+.ring{width:clamp(160px,55vw,220px); height:clamp(160px,55vw,220px); margin:0 auto 22px; position:relative;}
+svg{width:100%; height:100%; transform:rotate(-90deg);}
+circle{fill:none; stroke-width:10;}
+.bg{stroke:var(--border);}
+.fg{stroke:var(--accent); stroke-linecap:round; transition:stroke-dashoffset .2s linear, stroke .2s;}
+.fg.work{stroke:var(--work);}
+.fg.rest{stroke:var(--rest);}
+.ring .center{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;}
+.controls{display:flex; gap:10px; justify-content:center;}
+button{
+  border:none; border-radius:12px; padding:14px 22px; font-size:15px; font-weight:600;
+  cursor:pointer; color:#fff; background:var(--accent); flex:1;
+}
+button.secondary{background:transparent; border:1px solid var(--border); color:var(--text);}
+.settings{display:flex; gap:10px; margin-bottom:20px;}
+.field{flex:1; text-align:left;}
+.field label{display:block; font-size:12px; color:var(--sub); margin-bottom:4px;}
+.field input{
+  width:100%; padding:10px; border-radius:10px; border:1px solid var(--border);
+  background:var(--bg); color:var(--text); font-size:15px; text-align:center;
+}
+.hint{font-size:11px; color:var(--sub); margin-top:14px;}
+
+@keyframes flashWorkEnd{
+  0%{ transform:scale(1); box-shadow:0 0 0 0 rgba(255,90,95,.55); }
+  30%{ transform:scale(1.045); }
+  70%{ box-shadow:0 0 0 26px rgba(255,90,95,0); }
+  100%{ transform:scale(1); box-shadow:0 0 0 0 rgba(255,90,95,0); }
+}
+@keyframes flashRestEnd{
+  0%{ transform:scale(1) rotate(0deg); box-shadow:0 0 0 0 rgba(61,220,132,.55); }
+  25%{ transform:scale(1.03) rotate(-1.2deg); }
+  55%{ transform:scale(1.03) rotate(1.2deg); }
+  80%{ box-shadow:0 0 0 26px rgba(61,220,132,0); }
+  100%{ transform:scale(1) rotate(0deg); box-shadow:0 0 0 0 rgba(61,220,132,0); }
+}
+.card.flash-work-end{ animation:flashWorkEnd .6s ease-out; }
+.card.flash-rest-end{ animation:flashRestEnd .6s ease-out; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Luquitas ya no te necesitamos</h1>
+
+  <div class="settings" id="settings">
+    <div class="field"><label>Trabajo (s)</label><input type="number" id="workInput" value="25" min="1"></div>
+    <div class="field"><label>Descanso (s)</label><input type="number" id="restInput" value="15" min="1"></div>
+    <div class="field"><label>Rondas</label><input type="number" id="roundsInput" value="8" min="1"></div>
+  </div>
+
+  <div class="ring">
+    <svg viewBox="0 0 220 220">
+      <circle class="bg" cx="110" cy="110" r="100"></circle>
+      <circle class="fg" id="ringFg" cx="110" cy="110" r="100"></circle>
+    </svg>
+    <div class="center">
+      <div class="phase work" id="phaseLabel">LISTO</div>
+      <div class="time" id="timeLabel">25</div>
+    </div>
+  </div>
+
+  <div class="round" id="roundLabel">Ronda 1 de 8</div>
+
+  <div class="controls">
+    <button id="startBtn">Iniciar</button>
+    <button class="secondary" id="resetBtn">Reiniciar</button>
+  </div>
+  <div class="hint">2 pitidos cortos + 1 largo al terminar cada fase</div>
+</div>
+
+<script>
+const workInput = document.getElementById('workInput');
+const restInput = document.getElementById('restInput');
+const roundsInput = document.getElementById('roundsInput');
+const phaseLabel = document.getElementById('phaseLabel');
+const timeLabel = document.getElementById('timeLabel');
+const roundLabel = document.getElementById('roundLabel');
+const ringFg = document.getElementById('ringFg');
+const startBtn = document.getElementById('startBtn');
+const resetBtn = document.getElementById('resetBtn');
+const settings = document.getElementById('settings');
+const card = document.querySelector('.card');
+
+function flashCard(kind){
+  card.classList.remove('flash-work-end', 'flash-rest-end');
+  void card.offsetWidth; // restart animation
+  card.classList.add(kind);
+  setTimeout(() => card.classList.remove(kind), 650);
+}
+
+const R = 100, CIRC = 2 * Math.PI * R;
+ringFg.style.strokeDasharray = CIRC;
+ringFg.style.strokeDashoffset = 0;
+
+let audioCtx = null;
+function beep(freq, duration, vol){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+function longBeep(){ beep(880, 0.35, 0.3); }
+function shortBeep(){ beep(660, 0.12, 0.25); }
+
+let running = false;
+let phase = 'work'; // 'work' | 'rest'
+let secondsLeft = 25;
+let currentRound = 1;
+let totalRounds = 8;
+let workDur = 25, restDur = 15;
+let intervalId = null;
+
+function updateDisplay(){
+  timeLabel.textContent = secondsLeft;
+  phaseLabel.textContent = phase === 'work' ? 'TRABAJO' : 'DESCANSO';
+  phaseLabel.className = 'phase ' + phase;
+  ringFg.className = 'fg ' + phase;
+  roundLabel.textContent = 'Ronda ' + currentRound + ' de ' + totalRounds;
+  const dur = phase === 'work' ? workDur : restDur;
+  const frac = secondsLeft / dur;
+  ringFg.style.strokeDashoffset = CIRC * (1 - frac);
+}
+
+function tick(){
+  secondsLeft--;
+
+  if(secondsLeft === 2 || secondsLeft === 1){
+    shortBeep();
+  }
+
+  if(secondsLeft <= 0){
+    if(phase === 'work'){
+      if(currentRound >= totalRounds){
+        finish();
+        return;
+      }
+      phase = 'rest';
+      secondsLeft = restDur;
+      longBeep();
+      flashCard('flash-work-end');
+    } else {
+      phase = 'work';
+      currentRound++;
+      secondsLeft = workDur;
+      longBeep();
+      flashCard('flash-rest-end');
+    }
+  }
+  updateDisplay();
+}
+
+function finish(){
+  running = false;
+  clearInterval(intervalId);
+  phaseLabel.textContent = 'LISTO';
+  phaseLabel.className = 'phase rest';
+  timeLabel.textContent = '✓';
+  longBeep();
+  setTimeout(longBeep, 300);
+  startBtn.textContent = 'Iniciar';
+  settings.style.pointerEvents = 'auto';
+  settings.style.opacity = '1';
+}
+
+function start(){
+  if(running) return;
+  workDur = parseInt(workInput.value) || 25;
+  restDur = parseInt(restInput.value) || 15;
+  totalRounds = parseInt(roundsInput.value) || 8;
+
+  if(secondsLeft === 0 || phaseLabel.textContent === 'LISTO'){
+    phase = 'work';
+    secondsLeft = workDur;
+    currentRound = 1;
+  }
+  running = true;
+  settings.style.pointerEvents = 'none';
+  settings.style.opacity = '0.5';
+  startBtn.textContent = 'Pausar';
+  longBeep();
+  updateDisplay();
+  intervalId = setInterval(tick, 1000);
+}
+
+function pause(){
+  running = false;
+  clearInterval(intervalId);
+  startBtn.textContent = 'Reanudar';
+}
+
+function reset(){
+  running = false;
+  clearInterval(intervalId);
+  phase = 'work';
+  currentRound = 1;
+  workDur = parseInt(workInput.value) || 25;
+  restDur = parseInt(restInput.value) || 15;
+  totalRounds = parseInt(roundsInput.value) || 8;
+  secondsLeft = workDur;
+  startBtn.textContent = 'Iniciar';
+  settings.style.pointerEvents = 'auto';
+  settings.style.opacity = '1';
+  updateDisplay();
+}
+
+startBtn.addEventListener('click', () => {
+  if(running) pause();
+  else start();
+});
+resetBtn.addEventListener('click', reset);
+
+reset();
+</script>
+</body>
+</html>
